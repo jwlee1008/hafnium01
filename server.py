@@ -4,6 +4,7 @@ from collections import Counter
 from datetime import datetime, timezone
 import glob
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import importlib.util
 import io
 import json
 import math
@@ -26,11 +27,20 @@ RUNTIME_ROOT = APP_ROOT / "runtime"
 PROFILE_ROOT = APP_ROOT / "profiles"
 NODES_PATH = CONFIG_ROOT / "nodes.json"
 REFERENCE_DATA_ROOT = APP_ROOT / "reference_data"
+STRUCTURED_DATA_ROOT = REFERENCE_DATA_ROOT / "structured"
 DEFAULT_DATA_DIR = Path(os.environ.get("HANIUM_DATA_DIR", str(REFERENCE_DATA_ROOT)))
 DEFAULT_MODEL = os.environ.get("HANIUM_OLLAMA_MODEL", "qwen3:14b")
 OLLAMA_URL = os.environ.get("HANIUM_OLLAMA_URL", "http://localhost:11434/api/chat")
 BUNDLED_RADAR_SCRIPT = APP_ROOT / "radar_to_esp32.py"
 RADAR_SCRIPT = Path(os.environ.get("HANIUM_RADAR_SCRIPT", str(BUNDLED_RADAR_SCRIPT)))
+DEFAULT_CFG_RELATIVE = Path("configs") / "vital_signs_AOP_6m.cfg"
+
+SPATIAL_GRID_METRICS = {
+    "point_count": "Point detections",
+    "target_count": "Tracked targets",
+    "vital_count": "Vital detections",
+    "motion_sum": "Motion energy",
+}
 
 CONFIG_ROOT.mkdir(exist_ok=True)
 RUNTIME_ROOT.mkdir(exist_ok=True)
@@ -103,7 +113,7 @@ def default_node(sensor_id="sensor_01"):
         "esp_port": "",
         "data_baud": 921600,
         "esp_baud": 115200,
-        "cfg_path": "",
+        "cfg_path": str(DEFAULT_CFG_RELATIVE),
         "cfg_name": "vital_signs_AOP_6m.cfg",
         "notes": "내일 보드 연결 후 포트 스캔으로 COM/USB 포트를 선택",
         "status": "대기",
@@ -247,6 +257,122 @@ def scan_serial_ports():
     return sorted(unique.values(), key=lambda item: item["device"])
 
 
+def pyserial_available():
+    return importlib.util.find_spec("serial") is not None
+
+
+def resolve_app_path(value):
+    if not value:
+        return None
+    path = Path(str(value)).expanduser()
+    if path.is_absolute():
+        return path
+    return (APP_ROOT / path).resolve()
+
+
+def windows_incompatible_port(port):
+    return os.name == "nt" and str(port).lower().startswith(("/dev/", "/dev\\"))
+
+
+def classify_serial_port(port):
+    text = " ".join(
+        str(port.get(key, "") or "").lower()
+        for key in ("device", "description", "hwid")
+    )
+    device = port.get("device", "")
+    role = None
+    confidence = 0.0
+    reason = ""
+
+    radar_markers = ("xds110", "iwr", "awr", "ti", "enhanced", "standard")
+    esp_markers = ("esp32", "cp210", "cp210x", "ch340", "wch", "silicon labs")
+
+    if "enhanced" in text:
+        role, confidence, reason = "cli_port", 0.95, "description contains Enhanced"
+    elif "standard" in text or "data" in text:
+        role, confidence, reason = "data_port", 0.90, "description contains Standard/Data"
+    elif any(marker in text for marker in esp_markers) and not any(marker in text for marker in radar_markers):
+        role, confidence, reason = "esp_port", 0.75, "description looks like an ESP32 USB serial adapter"
+
+    return {
+        "device": device,
+        "role": role,
+        "confidence": confidence,
+        "reason": reason,
+    }
+
+
+def suggest_serial_roles(ports):
+    suggestions = {}
+    details = []
+    for port in ports:
+        classified = classify_serial_port(port)
+        details.append(classified)
+        role = classified["role"]
+        if not role:
+            continue
+        current = suggestions.get(role)
+        if current is None or classified["confidence"] > current["confidence"]:
+            suggestions[role] = classified
+
+    devices = [port.get("device", "") for port in ports]
+    if "cli_port" not in suggestions or "data_port" not in suggestions:
+        usbserial = sorted(device for device in devices if "usbserial" in device.lower())
+        if len(usbserial) >= 2:
+            suggestions.setdefault(
+                "cli_port",
+                {
+                    "device": usbserial[0],
+                    "role": "cli_port",
+                    "confidence": 0.45,
+                    "reason": "first usbserial device fallback; verify manually",
+                },
+            )
+            suggestions.setdefault(
+                "data_port",
+                {
+                    "device": usbserial[1],
+                    "role": "data_port",
+                    "confidence": 0.45,
+                    "reason": "second usbserial device fallback; verify manually",
+                },
+            )
+
+    return {
+        role: {
+            "device": item["device"],
+            "confidence": item["confidence"],
+            "reason": item["reason"],
+        }
+        for role, item in suggestions.items()
+        if item.get("device")
+    }
+
+
+def collection_preflight(node):
+    errors = []
+    if not pyserial_available():
+        errors.append("pyserial is not installed. Run: pip install -r requirements.txt")
+
+    cli_port = node.get("cli_port", "")
+    data_port = node.get("data_port", "")
+    if not cli_port:
+        errors.append("Radar CLI port is empty.")
+    if not data_port:
+        errors.append("Radar DATA port is empty.")
+    if cli_port and data_port and cli_port == data_port:
+        errors.append("Radar CLI and DATA ports are the same. They must be different.")
+    for label, port in (("CLI", cli_port), ("DATA", data_port), ("ESP32", node.get("esp_port", ""))):
+        if port and windows_incompatible_port(port):
+            errors.append(f"{label} port '{port}' is a macOS/Linux path, but this server is running on Windows.")
+
+    cfg_path = resolve_app_path(node.get("cfg_path"))
+    if cfg_path and not cfg_path.exists():
+        errors.append(f"CFG file was not found: {cfg_path}")
+
+    return errors, cfg_path
+
+
 def collection_job_snapshot():
     jobs = []
     for sensor_id, job in list(COLLECTION_PROCS.items()):
@@ -355,6 +481,201 @@ def read_csv_tail(path, limit=700, max_bytes=768 * 1024):
             text = header + "\n" + "\n".join(tail_lines)
     rows = list(csv.DictReader(io.StringIO(text)))
     return rows[-limit:]
+
+
+def read_csv_rows_limited(path, limit=500):
+    if not path or not path.exists():
+        return []
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        rows = list(csv.DictReader(handle))
+    return rows[-limit:] if limit and len(rows) > limit else rows
+
+
+def spatial_grid_candidates():
+    candidates = []
+    roots = [
+        ("runtime", RUNTIME_ROOT),
+        ("reference", STRUCTURED_DATA_ROOT),
+    ]
+    for source, root in roots:
+        if not root.exists():
+            continue
+        for path in root.glob("*_grid_windows.csv"):
+            try:
+                mtime = path.stat().st_mtime
+            except OSError:
+                continue
+            candidates.append(
+                {
+                    "source": source,
+                    "path": path,
+                    "name": path.name,
+                    "mtime": mtime,
+                    "mtime_label": file_mtime_label(path),
+                    "size": path.stat().st_size,
+                }
+            )
+    source_rank = {"runtime": 0, "reference": 1}
+    candidates.sort(key=lambda item: (source_rank.get(item["source"], 9), -item["mtime"], item["name"]))
+    return candidates
+
+
+def infer_grid_dimensions(row):
+    x_cells = safe_int(row.get("x_cells"))
+    y_cells = safe_int(row.get("y_cells"))
+    if x_cells and y_cells:
+        return x_cells, y_cells
+
+    max_x = -1
+    max_y = -1
+    for key in row:
+        if not key.startswith("cell_y"):
+            continue
+        parts = key.split("_")
+        if len(parts) < 3:
+            continue
+        try:
+            y_index = int(parts[1][1:])
+            x_index = int(parts[2][1:])
+        except ValueError:
+            continue
+        max_y = max(max_y, y_index)
+        max_x = max(max_x, x_index)
+    return max_x + 1, max_y + 1
+
+
+def grid_value(row, y_index, x_index, metric):
+    return parse_float(row.get(f"cell_y{y_index:02d}_x{x_index:02d}_{metric}")) or 0.0
+
+
+def build_grid_matrix(rows, metric, x_cells, y_cells, aggregate=True):
+    matrix = [[0.0 for _ in range(x_cells)] for _ in range(y_cells)]
+    if not rows:
+        return matrix
+    source_rows = rows if aggregate else [rows[-1]]
+    for row in source_rows:
+        for y_index in range(y_cells):
+            for x_index in range(x_cells):
+                matrix[y_index][x_index] += grid_value(row, y_index, x_index, metric)
+    return [[round(value, 6) for value in row] for row in matrix]
+
+
+def compact_grid_window(row):
+    return {
+        "session_id": row.get("session_id", ""),
+        "cfg": row.get("cfg", ""),
+        "window_index": safe_int(row.get("window_index")),
+        "window_start_sec": parse_float(row.get("window_start_sec")),
+        "window_end_sec": parse_float(row.get("window_end_sec")),
+        "frame_start": safe_int(row.get("frame_start")),
+        "frame_end": safe_int(row.get("frame_end")),
+        "frame_count": safe_int(row.get("frame_count")),
+        "presence_ratio": parse_float(row.get("presence_ratio")),
+        "point_total": safe_int(row.get("point_total")),
+        "target_total": safe_int(row.get("target_total")),
+        "target_id_count": safe_int(row.get("target_id_count")),
+        "vital_total": safe_int(row.get("vital_total")),
+        "vital_target_id_count": safe_int(row.get("vital_target_id_count")),
+        "vital_range_bin_mode": row.get("vital_range_bin_mode", ""),
+        "breath_deviation_mean": parse_float(row.get("breath_deviation_mean")),
+        "breath_deviation_max": parse_float(row.get("breath_deviation_max")),
+        "avg_abs_doppler_mps": parse_float(row.get("avg_abs_doppler_mps")),
+        "max_abs_doppler_mps": parse_float(row.get("max_abs_doppler_mps")),
+        "dominant_cell_x_m": parse_float(row.get("dominant_cell_x_m")),
+        "dominant_cell_y_m": parse_float(row.get("dominant_cell_y_m")),
+        "dominant_cell_score": parse_float(row.get("dominant_cell_score")),
+    }
+
+
+def summarize_spatial_grid(candidate):
+    rows = read_csv_rows_limited(candidate["path"], limit=240)
+    if not rows:
+        return None
+    x_cells, y_cells = infer_grid_dimensions(rows[0])
+    if x_cells <= 0 or y_cells <= 0:
+        return None
+
+    windows = [compact_grid_window(row) for row in rows]
+    point_total = sum(item["point_total"] or 0 for item in windows)
+    target_total = sum(item["target_total"] or 0 for item in windows)
+    vital_total = sum(item["vital_total"] or 0 for item in windows)
+    presence_mean = average([item["presence_ratio"] for item in windows])
+    latest = windows[-1] if windows else None
+
+    aggregate = {}
+    latest_grids = {}
+    maxima = {}
+    for metric in SPATIAL_GRID_METRICS:
+        aggregate_matrix = build_grid_matrix(rows, metric, x_cells, y_cells, aggregate=True)
+        latest_matrix = build_grid_matrix(rows, metric, x_cells, y_cells, aggregate=False)
+        aggregate[metric] = aggregate_matrix
+        latest_grids[metric] = latest_matrix
+        maxima[metric] = {
+            "aggregate": max((value for row in aggregate_matrix for value in row), default=0.0),
+            "latest": max((value for row in latest_matrix for value in row), default=0.0),
+        }
+
+    first = rows[0]
+    return {
+        "ok": True,
+        "source": candidate["source"],
+        "file": candidate["name"],
+        "path": str(candidate["path"]),
+        "mtime": candidate["mtime_label"],
+        "size": candidate["size"],
+        "row_count": len(rows),
+        "grid": {
+            "x_min": parse_float(first.get("x_min")) if first else -3.0,
+            "x_max": parse_float(first.get("x_max")) if first else 3.0,
+            "y_min": parse_float(first.get("y_min")) if first else 0.0,
+            "y_max": parse_float(first.get("y_max")) if first else 6.0,
+            "cell_size": parse_float(first.get("cell_size")) if first else 0.5,
+            "x_cells": x_cells,
+            "y_cells": y_cells,
+        },
+        "metrics": [{"key": key, "label": label} for key, label in SPATIAL_GRID_METRICS.items()],
+        "totals": {
+            "point_total": point_total,
+            "target_total": target_total,
+            "vital_total": vital_total,
+            "presence_ratio_mean": presence_mean,
+            "window_count": len(windows),
+        },
+        "latest_window": latest,
+        "windows": windows[-24:],
+        "aggregate": aggregate,
+        "latest": latest_grids,
+        "maxima": maxima,
+    }
+
+
+def action_spatial():
+    candidates = spatial_grid_candidates()
+    datasets = [
+        {
+            "source": item["source"],
+            "file": item["name"],
+            "path": str(item["path"]),
+            "mtime": item["mtime_label"],
+            "size": item["size"],
+        }
+        for item in candidates
+    ]
+    active = None
+    for candidate in candidates:
+        active = summarize_spatial_grid(candidate)
+        if active:
+            break
+    if not active:
+        return {
+            "ok": True,
+            "available": False,
+            "datasets": datasets,
+            "message": "grid window CSV not found",
+        }
+    active["available"] = True
+    active["datasets"] = datasets
+    return active
 
 
 def compact_vital_row(row):
@@ -1139,9 +1460,14 @@ def build_pc_result_line(pc_detection):
 
 def action_list_ports():
     ports = scan_serial_ports()
+    suggestions = suggest_serial_roles(ports)
     with STATE.lock:
         STATE.add_log("PORT", f"시리얼 포트 {len(ports)}개 스캔")
-    return {"ports": ports}
+    return {
+        "ports": ports,
+        "suggestions": suggestions,
+        "pyserial_available": pyserial_available(),
+    }
 
 
 def action_add_node(data):
@@ -1276,14 +1602,18 @@ def start_collection_jobs():
         if node.get("connection_mode") != "pc_iwr6843_usb":
             skipped.append({"sensor_id": sensor_id, "reason": "ESP32 엣지 모드는 결과읽기 사용"})
             continue
-        missing = node_readiness(node)["missing"]
-        required_missing = [item for item in missing if item in {"CLI 포트", "DATA 포트"}]
-        if required_missing:
-            skipped.append({"sensor_id": sensor_id, "reason": ", ".join(required_missing)})
+        preflight_errors, cfg_path = collection_preflight(node)
+        if preflight_errors:
+            reason = "; ".join(preflight_errors)
+            skipped.append({"sensor_id": sensor_id, "reason": reason})
             with STATE.lock:
                 live_node = find_node(sensor_id)
                 if live_node:
-                    live_node["status"] = "포트필요"
+                    live_node["status"] = "PRECHECK_FAILED"
+                    live_node["last_collection_error"] = {
+                        "time": datetime.now().strftime("%H:%M:%S"),
+                        "reason": reason,
+                    }
             continue
 
         csv_path = RUNTIME_ROOT / f"collection_{sensor_id}_{timestamp}.csv"
@@ -1310,8 +1640,8 @@ def start_collection_jobs():
             "--esp-mode",
             "none",
         ]
-        if node.get("cfg_path"):
-            cmd.extend(["--cfg", node["cfg_path"]])
+        if cfg_path:
+            cmd.extend(["--cfg", str(cfg_path)])
         else:
             cmd.append("--no-cfg")
 
@@ -1668,6 +1998,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(STATE.snapshot())
         if self.path == "/api/vitals":
             return self.send_json(action_vitals())
+        if self.path == "/api/spatial":
+            return self.send_json(action_spatial())
         if self.path == "/api/ports":
             return self.send_json({"ok": True, **action_list_ports()})
         if self.path.startswith("/static/"):

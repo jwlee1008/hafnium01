@@ -712,6 +712,67 @@ th {
   border-bottom-color: #303b4a;
 }
 
+.spatial-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(360px, 0.65fr);
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.spatial-panel {
+  min-width: 0;
+}
+
+.spatial-toolbar {
+  min-height: 58px;
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(160px, 240px));
+  gap: 10px;
+  border-bottom: 1px solid #303b4a;
+  background: #111820;
+}
+
+.spatial-toolbar label {
+  display: grid;
+  gap: 5px;
+}
+
+.spatial-toolbar span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.spatial-toolbar select {
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--text);
+  background: #0b1118;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.spatial-canvas-wrap {
+  height: min(56vw, 560px);
+  min-height: 380px;
+  padding: 12px;
+}
+
+#spatialHeatmap {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border: 1px solid #303b4a;
+  border-radius: 4px;
+  background: #0b1118;
+}
+
+.spatial-table-wrap {
+  max-height: 282px;
+}
+
 @media (max-width: 980px) {
   header {
     align-items: flex-start;
@@ -723,6 +784,7 @@ th {
   .control-strip,
   .vital-scoreboard,
   .vital-layout,
+  .spatial-layout,
   .status-grid,
   .workspace,
   .node-grid,
@@ -730,5 +792,12 @@ th {
   .form-pair,
   .form-actions {
     grid-template-columns: 1fr;
+  }
+  .spatial-toolbar {
+    grid-template-columns: 1fr;
+  }
+  .spatial-canvas-wrap {
+    min-height: 320px;
+    height: 72vw;
   }
 }

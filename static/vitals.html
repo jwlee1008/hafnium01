@@ -97,6 +97,59 @@
       </div>
     </section>
 
+    <section class="spatial-layout">
+      <div class="panel chart-panel spatial-panel">
+        <div class="panel-head">
+          <h2>공간 히트맵</h2>
+          <span id="spatialMeta">grid 대기</span>
+        </div>
+        <div class="spatial-toolbar">
+          <label>
+            <span>표시값</span>
+            <select id="spatialMetric">
+              <option value="point_count">포인트</option>
+              <option value="target_count">타깃</option>
+              <option value="vital_count">VITAL</option>
+              <option value="motion_sum">움직임</option>
+            </select>
+          </label>
+          <label>
+            <span>윈도우</span>
+            <select id="spatialMode">
+              <option value="aggregate">누적</option>
+              <option value="latest">최신</option>
+            </select>
+          </label>
+        </div>
+        <div class="spatial-canvas-wrap">
+          <canvas id="spatialHeatmap"></canvas>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>공간 데이터</h2>
+          <span id="spatialSource">-</span>
+        </div>
+        <div class="vital-kv" id="spatialStats"></div>
+        <div class="table-wrap spatial-table-wrap">
+          <table class="vital-table">
+            <thead>
+              <tr>
+                <th>윈도우</th>
+                <th>구간</th>
+                <th>포인트</th>
+                <th>타깃</th>
+                <th>VITAL</th>
+                <th>우세셀</th>
+              </tr>
+            </thead>
+            <tbody id="spatialWindows"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
     <section class="workspace">
       <div class="panel">
         <div class="panel-head">

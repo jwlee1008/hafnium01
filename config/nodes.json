@@ -1,5 +1,5 @@
 {
-  "updated_at": "2026-07-08T00:00:00+09:00",
+  "updated_at": "2026-07-08T13:55:05.203853+00:00",
   "nodes": [
     {
       "sensor_id": "sensor_01",
@@ -9,17 +9,17 @@
       "connection_mode": "pc_iwr6843_usb",
       "board": "ESP32-S3",
       "sensor": "IWR6843AOPEVM",
-      "cli_port": "/dev/cu.usbserial-011D1A570",
-      "data_port": "/dev/cu.usbserial-011D1A571",
-      "esp_port": "/dev/cu.usbserial-0001",
+      "cli_port": "",
+      "data_port": "",
+      "esp_port": "",
       "data_baud": 921600,
       "esp_baud": 115200,
       "cfg_path": "configs/vital_signs_AOP_6m.cfg",
       "cfg_name": "vital_signs_AOP_6m.cfg",
-      "notes": "다른 컴퓨터에서는 포트 스캔 후 CLI/DATA/ESP32 포트를 새로 지정하세요.",
-      "status": "연결준비",
-      "connection": "포트 스캔 후 갱신 필요",
-      "profile_status": "배포전",
+      "notes": "포트 스캔 후 이 컴퓨터에 맞는 Radar CLI, Radar DATA, ESP32 포트를 지정하세요.",
+      "status": "포트필요",
+      "connection": "포트 설정 필요",
+      "profile_status": "미배포",
       "last_result": null
     }
   ]

@@ -35,6 +35,9 @@ http://127.0.0.1:8787/vitals
 - 여러 ESP32 결과를 계속 읽는 자동 모니터링 시작/중지
 - `radar_to_esp32.py` 실시간 수집 프로세스 시작/중지 준비
 - `/vitals` 생체신호 전용 모니터
+- `/vitals` 공간 heatmap 모니터
+- IWR6843 point/target/vital 분리 CSV 생성 스크립트
+- 5초 window 기반 2D grid ML feature 생성 스크립트
 - ESP32 배포 및 결과 수신 시뮬레이션
 - 투박하지만 가시성 높은 대시보드 UI
 
@@ -63,6 +66,16 @@ http://127.0.0.1:8787/vitals
 
 노드에 `cfg_path`가 비어 있으면 `--no-cfg`로 실행합니다.
 레이더를 리셋했거나 처음 켜는 상황이면 UI에서 `CFG 경로`를 지정한 뒤 수집을 시작하는 편이 좋습니다.
+
+수집 전 사전 검사는 다음을 막습니다.
+
+```text
+pyserial 미설치
+CLI/DATA 포트 미설정
+CLI와 DATA가 같은 포트인 상태
+Windows에서 macOS/Linux /dev/... 포트를 쓰는 상태
+없는 cfg 파일 경로
+```
 
 ESP32로 내려가는 profile 전송 형식:
 
@@ -145,6 +158,64 @@ RESULT_JSON {"sensor_id":"sensor_01","person_count":1,"survivor_candidate":true,
 현재 PC-IWR6843 USB 구조에서는 PC가 최근 CSV/VITAL 윈도우로 `PC_RESULT_JSON`을 계산해 ESP32에 먼저 보내고,
 ESP32는 최근 5초 안의 PC 판정이 있으면 그 값을 `RESULT_JSON`으로 반환합니다.
 
+## ML/공간 Grid 파이프라인
+
+기본 대시보드 수집은 기존 flat CSV를 유지합니다. 안정적인 생체신호 모니터링과 ESP32 연동을 깨지 않기 위해서입니다.
+
+ML/공간 이미지화를 위한 고급 수집은 별도 스크립트를 사용합니다.
+
+```bash
+python3 scripts/radar_dataset_capture.py \
+  --cli-port /dev/cu.usbserial-011D1A570 \
+  --data-port /dev/cu.usbserial-011D1A571 \
+  --data-baud 921600 \
+  --cfg configs/vital_signs_AOP_6m.cfg \
+  --csv runtime/dataset_sensor_01.csv \
+  --session-id sensor_01_test_01 \
+  --cfg-name vital_signs_AOP_6m.cfg \
+  --esp-mode none \
+  --raw-debug
+```
+
+이 명령은 아래 파일들을 만듭니다.
+
+```text
+runtime/dataset_sensor_01_frames.csv
+runtime/dataset_sensor_01_points.csv
+runtime/dataset_sensor_01_targets.csv
+runtime/dataset_sensor_01_target_indexes.csv
+runtime/dataset_sensor_01_vitals.csv
+```
+
+그 다음 5초 단위 grid window feature를 생성합니다.
+
+```bash
+python3 scripts/build_grid_dataset.py \
+  --prefix runtime/dataset_sensor_01.csv \
+  --output runtime/dataset_sensor_01_grid_windows.csv
+```
+
+`/vitals` 화면의 공간 히트맵은 `runtime/*_grid_windows.csv`가 있으면 최신 runtime 데이터를 우선 표시하고,
+없으면 `reference_data/structured/dataset_aop6m_grid_windows.csv` 기준 샘플을 표시합니다.
+
+PNG/GIF 시각화 파일을 만들 때:
+
+```bash
+python3 scripts/visualize_iwr_grid.py \
+  --csv runtime/dataset_sensor_01_grid_windows.csv \
+  --out-dir runtime/iwr6843_grid_visuals
+```
+
+포함된 기준 데이터:
+
+```text
+reference_data/structured/dataset_aop6m_frames.csv
+reference_data/structured/dataset_aop6m_points.csv
+reference_data/structured/dataset_aop6m_targets.csv
+reference_data/structured/dataset_aop6m_vitals.csv
+reference_data/structured/dataset_aop6m_grid_windows.csv
+```
+
 ## 환경 변수
 
 ```bash
@@ -170,6 +241,8 @@ CFG          = /Users/jwlee/Documents/Codex/2026-07-07/d/hanium_radar_ai_control
 
 ## 다음 개발 후보
 
+- 새 grid window CSV에 실제 상황 라벨 붙이기
+- RandomForest/LogisticRegression 기반 첫 ML 모델 학습
 - LLM profile 후보 생성 후 Python 검증 루프
 - ESP32 펌웨어의 시뮬레이션 신호를 실제 센서 입력/로직으로 교체
 - Wi-Fi/MQTT 기반 ESP32 결과 전송 옵션

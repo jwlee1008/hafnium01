@@ -3,6 +3,8 @@ const $ = (id) => document.getElementById(id);
 let state = null;
 let currentEditingId = null;
 let serialPorts = [];
+let serialSuggestions = {};
+let serialHealth = null;
 
 function percent(value) {
   if (!value) return "0%";
@@ -82,7 +84,7 @@ function defaultNode() {
     esp_port: "",
     data_baud: 921600,
     esp_baud: 115200,
-    cfg_path: "",
+    cfg_path: "configs/vital_signs_AOP_6m.cfg",
     cfg_name: "vital_signs_AOP_6m.cfg",
     notes: ""
   };
@@ -280,13 +282,43 @@ function renderPorts() {
   const datalist = $("portOptions");
   datalist.innerHTML = serialPorts.map((port) => `<option value="${escapeHtml(port.device)}">${escapeHtml(port.description || "")}</option>`).join("");
   const list = $("portsList");
-  if (!serialPorts.length) {
-    list.textContent = "포트 없음 또는 아직 스캔 안 함";
-    return;
+  const warnings = [];
+  if (serialHealth && serialHealth.pyserial_available === false) {
+    warnings.push("pyserial missing: run pip install -r requirements.txt");
   }
-  list.innerHTML = serialPorts
+  const suggestionRows = Object.entries(serialSuggestions || {})
+    .map(([role, item]) => `<div class="port-item"><b>${escapeHtml(role)}</b><span>${escapeHtml(item.device)} (${Math.round((item.confidence || 0) * 100)}%)</span></div>`)
+    .join("");
+  const portRows = serialPorts
     .map((port) => `<div class="port-item"><b>${escapeHtml(port.device)}</b><span>${escapeHtml(port.description || port.hwid || "")}</span></div>`)
     .join("");
+  if (!serialPorts.length && !warnings.length) {
+    list.textContent = "No serial ports found yet.";
+    return;
+  }
+  list.innerHTML = [
+    ...warnings.map((warning) => `<div class="port-item warn"><b>Warning</b><span>${escapeHtml(warning)}</span></div>`),
+    suggestionRows ? `<button type="button" id="applyPortSuggestionsBtn">Apply suggested ports</button>${suggestionRows}` : "",
+    portRows
+  ].join("");
+  const applyButton = $("applyPortSuggestionsBtn");
+  if (applyButton) applyButton.addEventListener("click", () => applyPortSuggestions(true));
+}
+
+function applyPortSuggestions(notify = false) {
+  const mapping = {
+    cli_port: "cliPortInput",
+    data_port: "dataPortInput",
+    esp_port: "espPortInput"
+  };
+  Object.entries(mapping).forEach(([role, inputId]) => {
+    const suggestion = serialSuggestions?.[role]?.device;
+    const input = $(inputId);
+    if (suggestion && input && !input.value.trim()) {
+      input.value = suggestion;
+    }
+  });
+  if (notify) showToast("Suggested ports applied to empty fields.");
 }
 
 function render(nextState) {
@@ -419,7 +451,10 @@ async function saveNode(event) {
 async function scanPorts() {
   const data = await api("/api/ports");
   serialPorts = data.ports || [];
+  serialSuggestions = data.suggestions || {};
+  serialHealth = data;
   renderPorts();
+  applyPortSuggestions(false);
 }
 
 function bind() {
