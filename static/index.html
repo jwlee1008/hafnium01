@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HANIIUM Radar Control</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header>
+    <div>
+      <h1>HANIIUM Radar Local LLM Control</h1>
+      <p>메인컴퓨터 수집 · 로컬 LLM 캘리브레이션 · ESP32 Profile 배포 · 상황관리</p>
+    </div>
+    <div class="clock">
+      <span id="clockNow">-</span>
+      <strong id="modelName">qwen3:14b</strong>
+    </div>
+  </header>
+
+  <main>
+    <section class="control-strip">
+      <button id="scanBtn">1. CSV 스캔</button>
+      <button id="portsBtn">2. 포트 스캔</button>
+      <button id="collectBtn">3. 수집 시작/중지</button>
+      <button id="calibrateBtn" class="primary">4. 로컬 LLM 캘리브레이션</button>
+      <button id="deployBtn">5. ESP32 Profile 배포</button>
+      <button id="tickBtn">6. 결과 갱신</button>
+      <button id="monitorBtn">7. 자동 모니터</button>
+      <a class="button-link vital-link" href="/vitals" target="_blank" rel="noreferrer">생체신호 모니터</a>
+    </section>
+
+    <section class="status-grid">
+      <article class="metric">
+        <span>CSV 총 행</span>
+        <strong id="totalRows">0</strong>
+      </article>
+      <article class="metric">
+        <span>VITAL 행</span>
+        <strong id="vitalRows">0</strong>
+      </article>
+      <article class="metric">
+        <span>VITAL 비율</span>
+        <strong id="vitalRatio">0%</strong>
+      </article>
+      <article class="metric">
+        <span>수집 상태</span>
+        <strong id="collectState">대기</strong>
+      </article>
+      <article class="metric">
+        <span>활성 노드</span>
+        <strong id="nodeCount">0/0</strong>
+      </article>
+      <article class="metric">
+        <span>자동 모니터</span>
+        <strong id="monitorState">대기</strong>
+      </article>
+    </section>
+
+    <section class="workspace">
+      <div class="panel wide">
+        <div class="panel-head">
+          <h2>센서/ESP32 노드</h2>
+          <span>개수 제한 없이 추가/삭제 가능</span>
+        </div>
+        <div id="nodes" class="node-grid"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>노드 추가/수정</h2>
+          <span id="editMode">새 노드</span>
+        </div>
+        <form id="nodeForm" class="node-form">
+          <label>노드 ID<input id="sensorIdInput" placeholder="sensor_01"></label>
+          <label>이름<input id="nodeNameInput" placeholder="입구 좌측 노드"></label>
+          <label>위치 ID<input id="locationInput" placeholder="entrance_left"></label>
+          <label>연결 모드
+            <select id="modeInput">
+              <option value="pc_iwr6843_usb">IWR6843 USB + ESP32</option>
+              <option value="esp32_edge_serial">ESP32 엣지 노드</option>
+            </select>
+          </label>
+          <label>센서<input id="sensorInput" placeholder="IWR6843AOPEVM"></label>
+          <label>보드<input id="boardInput" placeholder="ESP32-S3"></label>
+          <label>Radar CLI 포트<input id="cliPortInput" list="portOptions" placeholder="COM3 또는 /dev/cu.*"></label>
+          <label>Radar DATA 포트<input id="dataPortInput" list="portOptions" placeholder="COM5 또는 /dev/cu.*"></label>
+          <label>ESP32 포트<input id="espPortInput" list="portOptions" placeholder="COM7 또는 /dev/cu.*"></label>
+          <div class="form-pair">
+            <label>DATA Baud<input id="dataBaudInput" type="number" value="921600"></label>
+            <label>ESP Baud<input id="espBaudInput" type="number" value="115200"></label>
+          </div>
+          <label>CFG 경로<input id="cfgPathInput" placeholder="C:\\한이음 프로젝트\\configs\\vital_signs_AOP_6m.cfg"></label>
+          <label>CFG 이름<input id="cfgNameInput" placeholder="vital_signs_AOP_6m.cfg"></label>
+          <label>메모<textarea id="notesInput" rows="3" placeholder="설치 위치, 방향, 거리 등을 기록"></textarea></label>
+          <label class="check"><input id="enabledInput" type="checkbox" checked> 활성화</label>
+          <div class="form-actions">
+            <button id="saveNodeBtn" type="submit" class="primary">저장</button>
+            <button id="newNodeBtn" type="button">새 노드</button>
+            <button id="deleteNodeBtn" type="button" class="danger">삭제</button>
+          </div>
+        </form>
+        <datalist id="portOptions"></datalist>
+        <div class="ports-box">
+          <div class="mini-head">스캔된 포트</div>
+          <div id="portsList" class="ports-list">아직 스캔 안 함</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="workspace">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>데이터 품질</h2>
+          <span id="dataDir">-</span>
+        </div>
+        <div id="qualityFlags" class="flags"></div>
+        <div id="labelList" class="label-list"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>연결 준비 체크</h2>
+          <span>내일 보드 연결 전 확인</span>
+        </div>
+        <div id="readinessList" class="readiness-list"></div>
+      </div>
+    </section>
+
+    <section class="workspace">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>수집 프로세스</h2>
+          <span>radar_to_esp32.py 실행 상태</span>
+        </div>
+        <div id="jobsList" class="jobs-list"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>로컬 LLM Profile</h2>
+          <span id="llmMeta">대기</span>
+        </div>
+        <pre id="profileView">{}</pre>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>실행 로그</h2>
+          <span>최근 이벤트</span>
+        </div>
+        <div id="logs" class="logs"></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>CSV 파일별 요약</h2>
+        <span>수집 데이터 상태</span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>파일</th>
+              <th>행</th>
+              <th>VITAL</th>
+              <th>VITAL%</th>
+              <th>객체 평균</th>
+              <th>객체 최대</th>
+              <th>호흡 p50</th>
+              <th>호흡 p90</th>
+            </tr>
+          </thead>
+          <tbody id="fileRows"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden">작업중</div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

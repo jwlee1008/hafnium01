@@ -1,0 +1,96 @@
+{
+  "updated_at": "2026-07-08T09:08:40.924130+00:00",
+  "nodes": [
+    {
+      "sensor_id": "sensor_01",
+      "name": "IWR6843 + ESP32 노드 1",
+      "location_id": "test_position_01",
+      "enabled": true,
+      "connection_mode": "pc_iwr6843_usb",
+      "board": "ESP32-S3",
+      "sensor": "IWR6843AOPEVM",
+      "cli_port": "/dev/cu.usbserial-011D1A570",
+      "data_port": "/dev/cu.usbserial-011D1A571",
+      "esp_port": "/dev/cu.usbserial-0001",
+      "data_baud": 921600,
+      "esp_baud": 115200,
+      "cfg_path": "/Users/jwlee/Documents/Codex/2026-07-07/d/hanium_radar_ai_control/configs/vital_signs_AOP_6m.cfg",
+      "cfg_name": "vital_signs_AOP_6m.cfg",
+      "notes": "CP2105 0=CLI, CP2105 1=DATA, CP2102=ESP32 후보. cfg 연결 완료.",
+      "status": "연결실패",
+      "connection": "CLI:/dev/cu.usbserial-011D1A570 / DATA:/dev/cu.usbserial-011D1A571 / ESP:/dev/cu.usbserial-0001",
+      "profile_status": "배포완료",
+      "last_result": {
+        "time": "00:46:59",
+        "sensor_id": "sensor_01",
+        "person_count": 0,
+        "survivor_candidate": false,
+        "confidence": 0.278,
+        "status": "CLEAR",
+        "profile_version": "pc-rule-v2-old-data",
+        "raw": {
+          "sensor_id": "sensor_01",
+          "profile_version": "pc-rule-v2-old-data",
+          "status": "CLEAR",
+          "person_count": 0,
+          "survivor_candidate": false,
+          "confidence": 0.278,
+          "source": "pc_vital_window",
+          "simulated": false,
+          "vital_ratio": 0.0476,
+          "breath_deviation": null,
+          "heart_rate": null,
+          "breath_rate": null,
+          "range_bin": "",
+          "range_stability": 0.0,
+          "frame_gap": 7,
+          "valid_vital_rows": 0
+        }
+      },
+      "last_connection_test": {
+        "time": "23:45:50",
+        "target": "/dev/cu.usbserial-0001",
+        "ok": true,
+        "method": "pyserial",
+        "responses": [
+          "ACK,PONG,sensor_id=sensor_01,profile_version=local-agent-v1,has_profile=1,uptime_ms=586538",
+          "RESULT_JSON {\"sensor_id\":\"sensor_01\",\"profile_version\":\"local-agent-v1\",\"has_profile\":true,\"status\":\"SURVIVOR_CANDIDATE\",\"person_count\":1,\"survivor_candidate\":true,\"confidence\":0.676,\"breath_deviation\":0.0406,\"vital_ratio\":0.108,\"uptime_ms\":587013}",
+          "RESULT_JSON {\"sensor_id\":\"sensor_01\",\"profile_version\":\"local-agent-v1\",\"has_profile\":true,\"status\":\"SURVIVOR_CANDIDATE\",\"person_count\":1,\"survivor_candidate\":true,\"confidence\":0.528,\"breath_deviation\":0.0317,\"vital_ratio\":0.084,\"uptime_ms\":588013}",
+          "RESULT_JSON {\"sensor_id\":\"sensor_01\",\"profile_version\":\"local-agent-v1\",\"has_profile\":true,\"status\":\"SURVIVOR_CANDIDATE\",\"person_count\":1,\"survivor_candidate\":true,\"confidence\":0.407,\"breath_deviation\":0.0244,\"vital_ratio\":0.065,\"uptime_ms\":589013}"
+        ]
+      },
+      "collection_log": "/Users/jwlee/Documents/Codex/2026-07-07/d/hanium_radar_ai_control/runtime/collection_sensor_01.log",
+      "collection_csv": "/Users/jwlee/Documents/Codex/2026-07-07/d/hanium_radar_ai_control/runtime/collection_sensor_01_20260708_004101.csv",
+      "last_deploy": {
+        "time": "00:40:46",
+        "target": "/dev/cu.usbserial-0001",
+        "ok": true,
+        "method": "pyserial",
+        "responses": [
+          "ACK,PROFILE,sensor_id=sensor_01,profile_version=local-agent-v1,has_profile=1,window_seconds=8",
+          "RESULT_JSON {\"sensor_id\":\"sensor_01\",\"profile_version\":\"pc-rule-v2-old-data\",\"status\":\"CLEAR\",\"person_count\":0,\"survivor_candidate\":false,\"confidence\":0.278,\"source\":\"pc_vital_window\",\"simulated\":false,\"vital_ratio\":0.0476,\"breath_deviation\":null,\"heart_rate\":null,\"breath_rate\":null,\"range_bin\":\"\",\"range_stability\":0.0,\"frame_gap\":7,\"valid_vital_rows\":0}",
+          "RESULT_JSON {\"sensor_id\":\"sensor_01\",\"profile_version\":\"pc-rule-v2-old-data\",\"status\":\"CLEAR\",\"person_count\":0,\"survivor_candidate\":false,\"confidence\":0.278,\"source\":\"pc_vital_window\",\"simulated\":false,\"vital_ratio\":0.0476,\"breath_deviation\":null,\"heart_rate\":null,\"breath_rate\":null,\"range_bin\":\"\",\"range_stability\":0.0,\"frame_gap\":7,\"valid_vital_rows\":0}"
+        ]
+      },
+      "last_result_read": {
+        "time": "18:08:40",
+        "target": "/dev/cu.usbserial-0001",
+        "source": "monitor",
+        "ok": false,
+        "error": "[Errno 2] could not open port /dev/cu.usbserial-0001: [Errno 2] No such file or directory: '/dev/cu.usbserial-0001'",
+        "pc_sync": {
+          "sent": true,
+          "status": "CLEAR",
+          "confidence": 0.278,
+          "source": "pc_vital_window"
+        }
+      },
+      "last_collection_error": {
+        "time": "00:41:44",
+        "return_code": 1,
+        "log_path": "/Users/jwlee/Documents/Codex/2026-07-07/d/hanium_radar_ai_control/runtime/collection_sensor_01.log",
+        "csv_path": "/Users/jwlee/Documents/Codex/2026-07-07/d/hanium_radar_ai_control/runtime/collection_sensor_01_20260708_004101.csv"
+      }
+    }
+  ]
+}

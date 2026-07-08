@@ -1,0 +1,37 @@
+{
+  "agent_role": "local_llm_calibration_agent",
+  "profile_batch": {
+    "profile_version": "local-agent-v1",
+    "deployment_decision": "collect_more_data",
+    "global_rationale_ko": "데이터셋에서 'no_person' 및 'person_moving' 기준 라벨이 누락되었으며, 이는 센서 프로파일의 정확도를 떨어뜨릴 수 있습니다. 추가 데이터 수집이 필요합니다.",
+    "sensor_profiles": [
+      {
+        "sensor_id": "sensor_01",
+        "location_id": "test_position_01",
+        "profile": {
+          "mode": "vital_detect",
+          "window_seconds": 8,
+          "breath_dev_min": 0.025,
+          "vital_ratio_min": 0.045,
+          "confirm_seconds": 4,
+          "lost_grace_seconds": 4,
+          "moving_reject": true,
+          "confidence_policy": "sensitive"
+        },
+        "rationale_ko": "기존 양성 CSV의 vital_ratio가 0.05~0.09 범위에 분포하므로 trial profile은 0.045 기준으로 낮추고 breath deviation과 반복성으로 보강합니다.",
+        "risk_notes_ko": [
+          "데이터셋의 'no_person' 및 'person_moving' 라벨 누락으로 인해 잘못된 감지 가능성"
+        ],
+        "required_next_data": [
+          "no_person 기준 라벨 데이터",
+          "person_moving 기준 라벨 데이터"
+        ]
+      }
+    ],
+    "next_experiments": [
+      "no_person 기준 라벨 데이터 수집 실험",
+      "person_moving 기준 라벨 데이터 수집 실험"
+    ]
+  },
+  "created_at": "2026-07-07T15:19:29.179698+00:00"
+}

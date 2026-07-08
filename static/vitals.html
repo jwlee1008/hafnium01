@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HANIIUM Vital Monitor</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <header>
+    <div>
+      <h1>생체신호 모니터</h1>
+      <p>Radar VITAL 수신 상태 · 심박/호흡 추적 · ESP32 결과값 확인</p>
+    </div>
+    <div class="clock">
+      <span id="clockNow">-</span>
+      <strong id="pageState">대기</strong>
+    </div>
+  </header>
+
+  <main class="vitals-main">
+    <section class="control-strip vitals-controls">
+      <a class="button-link" href="/">대시보드</a>
+      <button id="collectBtn" class="primary">수집 시작/중지</button>
+      <button id="monitorBtn">자동 모니터</button>
+      <button id="resultBtn">ESP32 결과읽기</button>
+      <button id="refreshBtn">새로고침</button>
+      <label class="node-picker">
+        <span>센서 노드</span>
+        <select id="nodeSelect"></select>
+      </label>
+    </section>
+
+    <section class="vital-scoreboard">
+      <article id="signalCard" class="metric signal-card">
+        <span>생체신호 상태</span>
+        <strong id="signalState">NO DATA</strong>
+        <small id="signalDetail" class="subvalue">-</small>
+      </article>
+      <article class="metric">
+        <span>심박</span>
+        <strong id="heartRate">-</strong>
+        <small class="subvalue">bpm</small>
+      </article>
+      <article class="metric">
+        <span>호흡</span>
+        <strong id="breathRate">-</strong>
+        <small class="subvalue">rpm</small>
+      </article>
+      <article class="metric">
+        <span>호흡 편차</span>
+        <strong id="breathDeviation">-</strong>
+        <small class="subvalue">breath deviation</small>
+      </article>
+      <article class="metric">
+        <span>최근 VITAL%</span>
+        <strong id="vitalRatio">0%</strong>
+        <small id="tailInfo" class="subvalue">-</small>
+      </article>
+      <article class="metric">
+        <span>프레임</span>
+        <strong id="frameValue">-</strong>
+        <small id="rangeValue" class="subvalue">range -</small>
+      </article>
+    </section>
+
+    <section class="vital-layout">
+      <div class="panel chart-panel">
+        <div class="panel-head">
+          <h2>심박/호흡 추세</h2>
+          <span id="chartMeta">-</span>
+        </div>
+        <div class="vital-chart-wrap">
+          <canvas id="vitalChart"></canvas>
+        </div>
+        <div class="legend">
+          <span><i class="heart"></i>심박</span>
+          <span><i class="breath"></i>호흡</span>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>PC 실시간 판정</h2>
+          <span id="edgeMeta">-</span>
+        </div>
+        <div class="edge-box">
+          <div id="edgeStatus" class="edge-status">
+            <strong>NO DATA</strong>
+            <div class="node-row"><span>사람 수</span><b id="edgeCount">-</b></div>
+            <div class="node-row"><span>생존 후보</span><b id="edgeSurvivor">-</b></div>
+            <div class="node-row"><span>신뢰도</span><b id="edgeConfidence">-</b></div>
+            <div class="node-row"><span>판정 기준</span><b id="edgeProfile">-</b></div>
+          </div>
+        </div>
+        <div class="vital-kv" id="nodeMeta"></div>
+      </div>
+    </section>
+
+    <section class="workspace">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>최근 VITAL 행</h2>
+          <span id="vitalRowsMeta">-</span>
+        </div>
+        <div class="table-wrap">
+          <table class="vital-table">
+            <thead>
+              <tr>
+                <th>프레임</th>
+                <th>심박</th>
+                <th>호흡</th>
+                <th>편차</th>
+                <th>Range</th>
+                <th>Target</th>
+              </tr>
+            </thead>
+            <tbody id="recentVitals"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h2>최근 RADAR 행</h2>
+          <span id="radarRowsMeta">-</span>
+        </div>
+        <div class="table-wrap">
+          <table class="vital-table">
+            <thead>
+              <tr>
+                <th>프레임</th>
+                <th>VITAL</th>
+                <th>객체</th>
+                <th>TLV</th>
+                <th>패킷</th>
+                <th>요약</th>
+              </tr>
+            </thead>
+            <tbody id="recentRadar"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden">작업중</div>
+  <script src="/static/vitals.js"></script>
+</body>
+</html>
