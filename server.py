@@ -34,6 +34,7 @@ OLLAMA_URL = os.environ.get("HANIUM_OLLAMA_URL", "http://localhost:11434/api/cha
 BUNDLED_RADAR_SCRIPT = APP_ROOT / "radar_to_esp32.py"
 RADAR_SCRIPT = Path(os.environ.get("HANIUM_RADAR_SCRIPT", str(BUNDLED_RADAR_SCRIPT)))
 DEFAULT_CFG_RELATIVE = Path("configs") / "vital_signs_AOP_6m.cfg"
+GRID_BUILD_SCRIPT = APP_ROOT / "scripts" / "build_grid_dataset.py"
 
 SPATIAL_GRID_METRICS = {
     "point_count": "Point detections",
@@ -373,6 +374,75 @@ def collection_preflight(node):
     return errors, cfg_path
 
 
+def collection_prefix_path(csv_path):
+    path = Path(csv_path)
+    return path.with_suffix("") if path.suffix.lower() == ".csv" else path
+
+
+def collection_grid_path(csv_path):
+    prefix = collection_prefix_path(csv_path)
+    return prefix.with_name(f"{prefix.name}_grid_windows.csv")
+
+
+def build_collection_grid(csv_path, log_path=None):
+    if not csv_path:
+        return {"ok": False, "reason": "collection csv path is empty"}
+    prefix = collection_prefix_path(csv_path)
+    frames_path = prefix.with_name(f"{prefix.name}_frames.csv")
+    output_path = collection_grid_path(csv_path)
+    if not frames_path.exists():
+        return {
+            "ok": False,
+            "reason": f"structured frames CSV not found: {frames_path}",
+            "grid_path": str(output_path),
+        }
+    if not GRID_BUILD_SCRIPT.exists():
+        return {
+            "ok": False,
+            "reason": f"grid build script not found: {GRID_BUILD_SCRIPT}",
+            "grid_path": str(output_path),
+        }
+
+    cmd = [
+        sys.executable,
+        str(GRID_BUILD_SCRIPT),
+        "--prefix",
+        str(prefix),
+        "--output",
+        str(output_path),
+    ]
+    try:
+        completed = subprocess.run(
+            cmd,
+            cwd=str(APP_ROOT),
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=45,
+        )
+    except Exception as error:
+        result = {"ok": False, "reason": str(error), "grid_path": str(output_path), "cmd": cmd}
+    else:
+        result = {
+            "ok": completed.returncode == 0 and output_path.exists(),
+            "return_code": completed.returncode,
+            "grid_path": str(output_path),
+            "cmd": cmd,
+            "stdout": completed.stdout[-2000:],
+            "stderr": completed.stderr[-2000:],
+        }
+        if not result["ok"] and not result.get("stderr"):
+            result["reason"] = "grid build did not create output"
+
+    if log_path:
+        try:
+            with Path(log_path).open("a", encoding="utf-8") as handle:
+                handle.write(f"--- {utc_now()} GRID_BUILD {json.dumps(result, ensure_ascii=False)} ---\n")
+        except OSError:
+            pass
+    return result
+
+
 def collection_job_snapshot():
     jobs = []
     for sensor_id, job in list(COLLECTION_PROCS.items()):
@@ -387,6 +457,7 @@ def collection_job_snapshot():
                     handle.close()
                 except OSError:
                     pass
+            job["grid_result"] = build_collection_grid(job.get("csv_path"), job.get("log_path"))
             job["closed"] = True
         jobs.append(
             {
@@ -397,6 +468,7 @@ def collection_job_snapshot():
                 "cmd": job.get("cmd", []),
                 "log_path": str(job.get("log_path", "")),
                 "csv_path": str(job.get("csv_path", "")),
+                "grid_result": job.get("grid_result"),
                 "started_at": job.get("started_at"),
             }
         )
@@ -412,12 +484,16 @@ def collection_job_snapshot():
                 node = find_node(job["sensor_id"])
                 if node and node.get("enabled", True):
                     node["status"] = "대기" if job["return_code"] == 0 else "수집오류"
+                    grid_result = job.get("grid_result")
+                    if grid_result and grid_result.get("ok"):
+                        node["grid_csv"] = grid_result.get("grid_path")
                     if job["return_code"] not in (0, None):
                         node["last_collection_error"] = {
                             "time": datetime.now().strftime("%H:%M:%S"),
                             "return_code": job["return_code"],
                             "log_path": job["log_path"],
                             "csv_path": job["csv_path"],
+                            "grid_result": grid_result,
                         }
             if completed:
                 STATE.nodes = save_nodes(STATE.nodes)
@@ -1691,12 +1767,22 @@ def stop_collection_jobs():
         if handle:
             handle.write(f"--- {utc_now()} STOP ---\n")
             handle.close()
-        stopped.append({"sensor_id": sensor_id, "return_code": process.poll() if process else None})
+        grid_result = build_collection_grid(job.get("csv_path"), job.get("log_path"))
+        stopped.append(
+            {
+                "sensor_id": sensor_id,
+                "return_code": process.poll() if process else None,
+                "csv_path": str(job.get("csv_path", "")),
+                "grid_result": grid_result,
+            }
+        )
         del COLLECTION_PROCS[sensor_id]
         with STATE.lock:
             node = find_node(sensor_id)
             if node and node.get("enabled", True):
                 node["status"] = "대기"
+                if grid_result.get("ok"):
+                    node["grid_csv"] = grid_result.get("grid_path")
     with STATE.lock:
         STATE.nodes = save_nodes(STATE.nodes)
     return {"stopped": stopped}

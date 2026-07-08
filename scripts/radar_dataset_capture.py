@@ -114,7 +114,26 @@ VITAL_CSV_FIELDS = [
     "breath_waveform",
 ]
 
+LEGACY_CSV_FIELDS = [
+    "timestamp",
+    "session_id",
+    "label",
+    "cfg",
+    "frame",
+    "num_detected_obj",
+    "num_tlvs",
+    "packet_len",
+    "tlv_summary",
+    "has_vital",
+    "target_id",
+    "range_bin",
+    "breath_deviation",
+    "heart_rate",
+    "breath_rate",
+]
+
 CSV_FIELDSETS = {
+    "legacy": LEGACY_CSV_FIELDS,
     "frames": FRAME_CSV_FIELDS,
     "points": POINT_CSV_FIELDS,
     "targets": TARGET_CSV_FIELDS,
@@ -699,13 +718,17 @@ def csv_output_paths(base_csv_path):
     base_path = Path(base_csv_path)
     if base_path.suffix.lower() == ".csv":
         prefix_path = base_path.with_suffix("")
+        legacy_path = base_path
     else:
         prefix_path = base_path
+        legacy_path = base_path.with_suffix(".csv")
 
-    return {
+    paths = {
         name: prefix_path.with_name(f"{prefix_path.name}_{name}.csv")
         for name in CSV_FIELDSETS
+        if name != "legacy"
     }
+    return {"legacy": legacy_path, **paths}
 
 
 def open_csv_outputs(stack, base_csv_path):
@@ -724,8 +747,9 @@ def open_csv_outputs(stack, base_csv_path):
     return outputs
 
 
-def write_dataset_csv(csv_outputs, session_id, cfg_name, frame, frame_data, timestamp):
+def write_dataset_csv(csv_outputs, session_id, cfg_name, label, frame, frame_data, timestamp):
     base_row = frame_base_row(session_id, cfg_name, frame, timestamp)
+    tlv_summary = make_tlv_summary(frame)
 
     csv_outputs["frames"]["writer"].writerow(
         {
@@ -736,7 +760,7 @@ def write_dataset_csv(csv_outputs, session_id, cfg_name, frame, frame_data, time
             "num_detected_obj": frame["num_detected_obj"],
             "num_tlvs": frame["num_tlvs"],
             "packet_len": frame["packet_len"],
-            "tlv_summary": make_tlv_summary(frame),
+            "tlv_summary": tlv_summary,
             "presence_indication": frame_data["presence_indication"],
             "point_count": len(frame_data["points"]),
             "target_count": len(frame_data["targets"]),
@@ -745,6 +769,43 @@ def write_dataset_csv(csv_outputs, session_id, cfg_name, frame, frame_data, time
             "unknown_tlv_summary": frame_data["unknown_tlv_summary"],
         }
     )
+
+    legacy_base = {
+        "timestamp": f"{timestamp:.3f}",
+        "session_id": session_id,
+        "label": label,
+        "cfg": cfg_name,
+        "frame": frame["frame"],
+        "num_detected_obj": frame["num_detected_obj"],
+        "num_tlvs": frame["num_tlvs"],
+        "packet_len": frame["packet_len"],
+        "tlv_summary": tlv_summary,
+    }
+    if frame_data["vitals"]:
+        for vitals in frame_data["vitals"]:
+            csv_outputs["legacy"]["writer"].writerow(
+                {
+                    **legacy_base,
+                    "has_vital": "true",
+                    "target_id": vitals["id"],
+                    "range_bin": vitals["range_bin"],
+                    "breath_deviation": format_float(vitals["breath_deviation"]),
+                    "heart_rate": format_float(vitals["heart_rate"], 3),
+                    "breath_rate": format_float(vitals["breath_rate"], 3),
+                }
+            )
+    else:
+        csv_outputs["legacy"]["writer"].writerow(
+            {
+                **legacy_base,
+                "has_vital": "false",
+                "target_id": "",
+                "range_bin": "",
+                "breath_deviation": "",
+                "heart_rate": "",
+                "breath_rate": "",
+            }
+        )
 
     for point in frame_data["points"]:
         csv_outputs["points"]["writer"].writerow(
@@ -956,7 +1017,7 @@ def main():
     parser.add_argument(
         "--label",
         default="unlabeled",
-        help="Deprecated and ignored. Add ground-truth labels in a later dataset labeling step.",
+        help="Ground-truth or run label stored in the UI-compatible flat CSV.",
     )
     parser.add_argument(
         "--session-id",
@@ -1024,8 +1085,6 @@ def main():
             for name, output in csv_outputs.items():
                 print(f"  {name}: {output['path']}")
             print(f"CSV session_id={session_id}, cfg={cfg_name}")
-            if args.label != "unlabeled":
-                print("[INFO] --label is ignored. Add labels later during dataset labeling.")
 
         print(f"Opening radar data port {args.data_port} @ {args.data_baud}")
         radar_data = stack.enter_context(
@@ -1119,6 +1178,7 @@ def main():
                         csv_outputs,
                         session_id,
                         cfg_name,
+                        args.label,
                         frame,
                         frame_data,
                         now,
